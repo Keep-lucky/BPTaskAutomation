@@ -1,0 +1,45 @@
+# Local credentials and environment settings
+/config.json
+.env
+.env.*
+!.env.example
+!.env.sample
+# Python environments and caches
+.venv/
+venv/
+env/
+.uv-cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build output
+build/
+dist/
+*.egg-info/
+
+# Local tools, logs, and temporary test files
+.playwright-mcp/
+.idea/
+/.test-tmp/
+/wxauto_logs/
+*.log
+
+# Personal task materials and generated screenshots
+/images/
+/image/
+
+# Downloaded website source and browser investigation output
+/site-index-source.js
+/task-detail-source.js
+/docs/login-discovery/
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

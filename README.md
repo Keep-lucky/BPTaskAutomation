@@ -1,169 +1,226 @@
-# 上汽平台登录验证与任务列表
+# XX平台任务工作台
 
-参考 GradingAssignments 中智学网的“复用已有凭证 + 请求业务接口验证”模式。
-该平台使用 Token。登录验证成功后，程序自动获取并显示任务列表。
+通过 API 访问 XX平台，提供命令行查询和 `desktop.py` 桌面工作台，支持短信登录、任务查询、材料上传及提交审核。
 
-## 桌面工作台
+本文使用 XX平台、示例域名和占位参数，不包含真实账号、凭证、任务编号或本机路径。示例域名不能直接用于请求；项目中的平台地址目前由 API 模块的 `BASE_URL` 常量定义，并非配置文件选项。
+
+## 环境配置
+
+基础功能需要 Python 3.10+、`requests` 和 Tkinter。推荐在 Windows 上创建独立虚拟环境；可选的微信自动化功能仅支持 Windows。
+
+在项目根目录执行以下 PowerShell 命令，无需激活虚拟环境：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+检查 Tkinter 是否可用：
+
+```powershell
+.\.venv\Scripts\python.exe -m tkinter
+```
+
+出现测试窗口即表示可用。若提示缺少 `tkinter`，请通过 Python 安装程序安装 Tcl/Tk 组件；它不由 `requirements.txt` 安装。
+
+### 登录配置
+
+桌面端直接使用手机号和验证码登录，也支持在窗口中粘贴 Token，无需预先配置文件。Token 支持裸值或 `Bearer <TOKEN>` 格式，窗口不会将 Token 保存到配置文件。
+
+命令行推荐使用 `--prompt` 隐藏输入 Token：
+
+```powershell
+.\.venv\Scripts\python.exe main.py --prompt
+```
+
+也可以复制配置模板，**仅在本机**填写有效凭证：
+
+```powershell
+Copy-Item config.example.json config.json
+```
+
+```json
+{
+  "token": "<TOKEN>"
+}
+```
+
+随后执行 `main.py`，或用 `--config <配置文件路径>` 指定其他 JSON 文件。命令行还兼容代码中定义的 Token 环境变量，读取优先级为：显式 `--prompt` 输入 > 环境变量 > 配置文件。程序不会自动读取 `.env` 文件。
+
+`config.json`、`.env`、虚拟环境、日志及本地图片材料已加入 `.gitignore`。示例配置保持空凭证。
+
+## desktop.py 使用方法
+
+启动桌面工作台：
 
 ```powershell
 .\.venv\Scripts\python.exe desktop.py
 ```
 
-1. 输入手机号，点击“获取验证码”，收到短信后输入 6 位验证码，点击“短信登录”。程序自动取得 Token、验证用户信息并加载任务。验证码发送成功后有 59 秒重发倒计时；请求失败需手动重试。备用方式仍可粘贴 Token 登录。
-2. 选择任务，点击“查看选中任务”，阅读要求。左侧“目标文章链接”自动显示该任务的 `taskDetailDTOS.taskLinkUrl`，点击“复制目标链接”即可复制；未配置链接的任务显示为空。
-3. 为对应材料选择真实截图；带 `*` 的字段必填。原创任务填写真实作品链接。
-4. 可先点击“调试预览”，仅输出请求结构，不产生领取、上传或提交。
-5. 确认已真实完成任务后，点击“一键领取、上传并提交审核”。
+### 登录与查询
 
-### 微信打开目标文章（方案一）
+1. 输入手机号，点击“获取验证码”，再输入收到的 6 位验证码，点击“短信登录”。发送成功后有 59 秒重发倒计时，失败后需手动重试。
+2. 也可在“备用 Token”中粘贴凭证，点击“登录并加载任务”。
+3. 选择任务状态及页码，点击“刷新列表”。状态包括任务广场、进行中、已完成、已失效。
+4. 选中任务后点击“查看选中任务”，查看要求、领取状态、目标链接和材料字段。
 
-先登录 Windows 微信，并在运行桌面程序的同一个 Python 环境中安装与客户端版本匹配的
-wxauto4 及依赖（文档：https://docs.wxauto.org）。当前固定版本为 `wxauto4==41.1.7`，
-该版本发布说明标注适用于微信 4.1.8；其他客户端版本需核对兼容性。
-wxauto4 是此功能的可选依赖，缺失时其他任务功能仍可使用。
+### 单任务提交
 
-在已激活的 `AutoMaiton` 环境中执行：
+1. 阅读任务要求，完成相应操作并准备真实材料。
+2. 为材料字段选择本地截图，带 `*` 的字段为必填；原创任务还需填写有效作品链接。
+3. 可先点击“调试预览（不领取、不上传、不提交）”，查看请求结构。
+4. 勾选已真实完成任务的确认框，点击“一键领取、上传并提交审核”。
+5. 在步骤树与日志中查看“检查材料 → 领取任务 → 获取上传凭证 → 上传文件 → 提交审核”的执行结果。
 
-```powershell
-python -m pip install -r requirements-wechat.txt
-python -c "from wxauto4 import WeChat; print('wxauto4 导入成功')"
-python desktop.py
+材料缺失时会在领取前停止；已有领取单号时复用。上传缓存仅在当前窗口内保留，文件大小及修改时间未变化时可复用成功上传的材料。提交成功表示进入审核，最终结果以 XX平台为准。
+
+### 批量提交与材料目录
+
+在任务列表左侧勾选多个任务，也可“全选本页”或“取消全选”。全选仅作用于当前页，刷新列表会清空勾选。
+
+- 并发线程数默认为 3，可设置为 1–8，每个任务使用独立请求会话。
+- 勾选任务后，提交按钮执行批量流程；未勾选时提交当前详情任务。
+- 批量模式从对应平台目录匹配图片，不使用详情面板手动选择的材料或作品链接。
+- 原创任务及无法自动匹配材料的任务需单独处理；单个任务失败不影响其他任务。
+
+材料目录位于项目根目录，需要自行创建并放入真实图片：
+
+```text
+images/
+├── wechat/
+│   ├── like.jpg
+│   ├── review.jpg
+│   └── forward.jpg
+├── toutiao/
+│   └── ...
+└── tiktok/
+    └── ...
 ```
 
-查看任务详情后，点击“微信打开文章（方案一）”：程序精确打开“文件传输助手”，
-发送当前任务的公众号文章链接，仅检查聊天列表最后一条记录，确认是当前任务链接后点击，
-由微信客户端处理文章打开；不扫描或点击其他历史记录。
-仅支持 HTTPS 的 `mp.weixin.qq.com` 链接。操作在后台线程执行，请等待完成再切换微信聊天。
-发送失败或消息未出现时会提示，不会自动重发；已发送的链接可在文件传输助手中手动点击。
-日志显示已点击只表示点击操作完成，文章是否加载成功需在微信中确认。
+上述子目录对应任务的平台类型。点赞优先使用 `like.jpg`，评论优先使用 `review.jpg`，转发优先使用 `forward.jpg`；评论和转发的首选文件不存在时互相备选，含评论的组合材料使用评论图片。程序不会跨平台寻找材料，文件必须存在且非空。单任务可手动更换图片。
 
-文章链接下方可勾选“点赞”“在看”“准备朋友圈分享”，填写选填配文，再点击
-“打开文章并执行所选操作”。切换任务会清空配文。程序按顺序执行，逐项记录已确认的结果，
-失败后停止后续操作；已点赞、已在看时跳过，状态不明时不重复点击。
-朋友圈仅准备分享界面及配文，由用户在微信中确认可见范围并点击发表。
+### 可选：微信文章操作
 
-点赞、在看完成后自动保存文章窗口截图，默认根目录为项目的 `images`；微信平台保存到
-`images/wechat`（本项目为 `F:\Projects\PythonProjects\BPTaskAutomation\images\wechat`）。
-文件名为任务 ID、时间戳和随机后缀，PNG 格式，不覆盖已有截图，日志显示完整保存路径。
-其他已知平台按平台子目录保存，未知平台直接保存到 `images`。
-截图只包含当前文章窗口可见内容，不是整篇长截图；选择朋友圈分享时，在打开分享界面前截图。
-截图失败会提示，文章互动不会自动重做；不会自动将截图填入提交材料或提交审核。
-
-这些互动使用 wxauto4 内置 UI Automation 控件，要求目标文章的标题能唯一匹配微信窗口内的文章文档，
-通过文章文档标题绑定窗口，按底部按钮标识定位，并用 `praised` / `love_btn_loved` 确认点赞和在看。已在当前微信文章实测这两项操作；朋友圈分享尚未端到端验证。
-若提示找不到控件、文章标题不匹配或客户端不支持分享，请在微信中手动操作，
-不要将日志中的“已点击”视为互动成功。此功能不会自动勾选“已真实完成任务”或提交审核。
-
-任务材料按平台从项目目录选择：微信为 `images/wechat`，今日头条为
-`images/toutiao`，抖音为 `images/tiktok`。为兼容当前目录结构，当对应
-`images/<平台>` 不存在时使用 `image/<平台>`，不会跨平台查找。
-点赞使用 `like.jpg`；评论优先 `review.jpg`，转发优先 `forward.jpg`，
-评论与转发的首选文件不存在时互相备选。含评论的组合材料使用评论图片。
-执行前检查文件存在且非空，领取后依次获取凭证、上传并按对应名称提交。
-单任务仍可手动更换图片；未知材料需手选。路径不受启动工作目录影响。
-
-### 批量领取、上传、提交
-
-任务列表左侧点击方框勾选任务，也可“全选本页”或“取消全选”；全选不跨页，
-刷新列表会清空勾选。勾选任务后，确认已真实完成所有勾选任务且平台目录图片
-符合各自要求，再点击“一键领取、上传并提交审核”。未勾选时仍执行当前详情任务。
-
-并发线程数默认为 3，可调整为 1–8。每任务使用独立会话，后台线程处理详情读取、
-领取、签发上传凭证、文件上传及提交；主线程显示每任务结果和总完成进度。
-步骤树可展开查看每任务的五个步骤，日志包含任务 ID。单个任务失败不影响其他任务。
-缺少必填图片、未知平台或无法匹配材料时，该任务在领取前失败。
-原创任务需要独立作品链接，批量模式不提交，须在详情中手工填写后单任务提交。
-批量模式使用平台目录图片，不套用详情面板手工选图或作品链接。
-本次窗口内保留各任务上传缓存；提交结果不确定的任务禁止直接重复提交，
-应先到平台核对。并发请求不自动重试，不会自动在外部平台点赞、转发或评论。
-
-五个步骤分别显示待执行、进行中、成功、失败，日志显示时间、文件及上传目标。
-文件上传按每张材料显示开始/完成，不提供字节级百分比；总进度按已完成步骤计算。
-实际提交成功表示进入平台审核，不代表审核通过。程序只处理截图材料提交链路，
-不会替用户在外部社交平台点赞、评论或转发。
-
-材料缺失时不会领取；已有领取单号会复用。上传失败后可修正重试，当前窗口内
-已成功上传且文件大小/修改时间未变的材料可复用。没有自动重试写请求；
-提交结果不确定时，先到平台核对状态。窗口不会保存 Token，不在日志输出凭证。
-桌面版使用真实接口；开发验证采用模拟请求，尚未完成真实材料提交的端到端验证。
-
-## 运行
+需要已登录的 Windows 微信客户端及与客户端版本匹配的 `wxauto4`。在同一个虚拟环境中安装可选依赖：
 
 ```powershell
-python -m pip install -r requirements.txt
-python main.py --prompt
+.\.venv\Scripts\python.exe -m pip install -r requirements-wechat.txt
+.\.venv\Scripts\python.exe -c "from wxauto4 import WeChat; print('依赖导入成功')"
 ```
 
-先在浏览器登录 https://saic-px.saicmotor.com/ ，打开开发者工具的 Network，
-进入“我的”，找到 `/api/front/mobile-users/show` 请求，复制请求头 `authorize` 的值。
-在程序提示中粘贴，输入不会显示；支持裸 Token 和 `Bearer ...`。
+项目固定 `wxauto4==41.1.7`，使用前需自行核对客户端兼容性。缺少可选依赖时，其他任务功能仍可使用。
 
-### 浏览器自动获取 Token
+查看任务详情后，点击“微信打开文章（方案一）”，程序向文件传输助手发送当前公众号文章链接并点击打开。也可勾选“点赞”“在看”“准备朋友圈分享”，填写选填配文，再执行所选操作。
 
-**无需 Console 的方式：** 用 Chrome/Edge 打开 `browser/token_bookmark.html`，
-按 Ctrl+Shift+B 显示书签栏，把“获取上汽 Token”蓝色链接拖到书签栏。
-回到已登录的平台页面点击该书签，等待验证并点击“复制 Token”。
-拖动无效时，安装页提供手动编辑书签地址的方式。不要在本地安装页执行书签。
-脚本更新后运行 `python browser/build_bookmark.py` 重新生成，再替换旧书签。
+操作完成后会保存当前文章窗口可见区域截图到 `images/wechat/`；截图不会自动填入提交材料。朋友圈功能仅准备分享界面和配文，需要在微信中确认可见范围并自行发表。操作期间请等待完成再切换聊天；状态无法确认时先查看客户端，避免重复操作。朋友圈分享尚未完成端到端验证。
 
-原 Console 方式：
+## API 调用说明
 
-1. 在已登录的平台页面按 F12，切换到 Console（控制台）。
-2. 将 `browser/get_token.js` 全部内容粘贴进去并执行。
-3. 脚本自动读取浏览器存储，并请求用户信息接口验证凭证。
-4. 在弹出面板中点击“复制 Token”或“复制 authorize 值”。
-5. 运行 `python main.py --prompt`，粘贴复制的值。
+### 请求约定
 
-脚本只在该平台域名运行，不在控制台输出凭证；剪贴板不可用时提供手动复制框。
-关闭面板会清除面板中的凭证，不会修改平台登录态或清除剪贴板。
+以下接口均相对于 XX平台服务地址，例如 `https://xx-platform.example`。JSON 请求使用 `Content-Type: application/json`；受保护的业务接口使用自定义认证头：
 
-也可以设置环境变量 `SAIC_TOKEN`，或复制 `config.example.json` 为 `config.json`
-并填写 `token`，然后运行 `python main.py`。环境变量优先，可用 `--config` 指定配置文件。
-真实凭证无需写入代码，配置文件已加入忽略列表。
+```http
+Accept: application/json
+authorize: Bearer <TOKEN>
+```
 
-## 查看任务列表
+认证字段名为 `authorize`。短信认证接口无需已有 Token。一般业务响应以 HTTP 200 且整数 `errcode` 为 0 表示成功，业务数据位于 `data`；登录验证还要求 `data.id` 非空。上传凭证接口另兼容直接返回 `token`、`key` 的响应。
 
-默认显示任务广场第 1 页，包含任务名称、类型、平台、状态、ID、奖励及截止时间。
+### 接口与参数
+
+| 功能 | 方法 | 路径 | 参数概要 |
+| --- | --- | --- | --- |
+| 发送短信验证码 | POST | `/api/front/system-auths/send-sms-code` | JSON：`phone`、`isUser: 1` |
+| 短信登录 | POST | `/api/front/system-auths/phone-login` | JSON：`phone`、`code`，以及空字符串 `wxCode`、`openId`、`nickname`、`avatar` |
+| 验证登录 | GET | `/api/front/mobile-users/show` | 认证头 |
+| 查询任务列表 | POST | `/api/front/tasks/list` | JSON：`page`、`size`、`status` |
+| 查询任务详情 | GET | `/api/front/tasks/show/{taskId}` | 路径参数 `taskId` |
+| 查询领取状态 | GET | `/api/front/task-completions/task-status` | 查询参数 `taskId` |
+| 领取任务 | POST | `/api/front/task-completions/claim/{taskId}` | 普通任务 JSON：`{}`；奖励任务：`{"rewardTaskFlag": 1}` |
+| 获取上传凭证 | POST | `/api/front/oss/policy` | JSON：`fileName` |
+| 提交审核 | POST | `/api/front/task-completions/submit` | JSON：`taskId`、`ticketId`、`imageUrls`，可选 `submitLink` |
+
+任务列表的 `status` 使用字符串：`"0"` 为任务广场，`"1,2"` 为进行中/审核中，`"3"` 为已完成，`"5,4"` 为已失效/未通过。当前列表仅查询普通任务，不合并季度奖励任务列表。
+
+### Python 查询示例
+
+以下示例直接使用 `requests`，运行前将示例地址替换为实际服务地址。Token 在终端隐藏输入，示例仅输出任务总数：
+
+```python
+from getpass import getpass
+import requests
+
+base_url = "https://xx-platform.example"
+token = getpass("Token（不含 Bearer 前缀）：").strip()
+
+with requests.Session() as session:
+    session.headers.update({
+        "Accept": "application/json",
+        "authorize": f"Bearer {token}",
+        "Referer": f"{base_url}/",
+    })
+    response = session.post(
+        f"{base_url}/api/front/tasks/list",
+        json={"page": 1, "size": 20, "status": "0"},
+        timeout=20,
+        allow_redirects=False,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"请求失败：HTTP {response.status_code}")
+    payload = response.json()
+    if type(payload.get("errcode")) is not int or payload["errcode"] != 0:
+        raise RuntimeError("业务请求失败，请检查登录状态和请求参数")
+    print("任务总数：", payload.get("count", 0))
+```
+
+### 上传与提交顺序
+
+先读取任务详情和领取状态，再校验材料；需要领取时取得 `ticketId`，随后按文件获取上传凭证，将图片上传到对象存储，最后提交材料。
+
+文件上传使用独立会话，以 multipart 表单发送上传凭证 `token`、对象键 `key` 和 `file`，不向对象存储传递 XX平台登录头。上传目标由上传模块解析凭证并查询服务得到，不应把平台 API 地址作为文件上传地址。
+
+提交参数中的 `imageUrls` 是 **JSON 序列化后的字符串**，其中每项包含 `img` 和 `url`。`img` 按任务要求匹配，`url` 使用上传结果对应的资源路径：
+
+```json
+{
+  "taskId": "<TASK_ID>",
+  "ticketId": "<TICKET_ID>",
+  "imageUrls": "[{\"img\":\"点赞\",\"url\":\"/<UPLOADED_KEY>\"}]"
+}
+```
+
+原创任务额外传入 `submitLink`。领取、上传和提交会改变远端状态；写请求没有自动重试。若提交超时或结果不确定，先在 XX平台核对状态，再决定后续操作。
+
+## 命令行查询与验证
 
 ```powershell
-python main.py --prompt
-python main.py --prompt --status active
-python main.py --prompt --status completed --page 1 --size 20
-python main.py --prompt --status expired
+# 查询任务列表，隐藏输入 Token
+.\.venv\Scripts\python.exe main.py --prompt
+
+# 查询进行中任务
+.\.venv\Scripts\python.exe main.py --prompt --status active
+
+# 分页查询已完成任务
+.\.venv\Scripts\python.exe main.py --prompt --status completed --page 1 --size 20
+
+# 查看任务详情、领取状态及请求预览；替换占位任务编号
+.\.venv\Scripts\python.exe main.py --prompt --inspect-task "<TASK_ID>"
+
+# 运行模拟接口测试
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-`--status` 支持 `plaza`（任务广场）、`active`（进行中/审核中）、
-`completed`（已完成）、`expired`（已失效/未通过）。`--page` 和 `--size` 控制分页。
-使用环境变量或配置文件时可以省略 `--prompt`。
+`--status` 支持 `plaza`、`active`、`completed`、`expired`；`--page` 和 `--size` 必须为正整数。详情预览会读取远端数据，但不执行领取、上传或提交。命令行成功退出码为 0，失败为 1。
 
-接口为 `POST /api/front/tasks/list`，发送 JSON：
-`{"page":1,"size":20,"status":"0"}`，复用登录会话。
-程序当前展示该接口返回的普通任务；网页任务广场还会合并
-`/api/front/tasks/season-reward/list` 的季度奖励任务，暂未纳入此列表。
-此操作只查询任务，不领取或提交任务。
+## 常见问题
 
-## 验证规则
+- **登录失败或 HTTP 401/403**：重新登录并取得有效凭证；短信登录需先在 XX平台完成账号注册。
+- **缺少必填截图**：检查任务要求、平台子目录和文件名，或在单任务详情中手动选择材料。
+- **上传失败**：查看失败步骤及网络状态；领取成功后通常可复用领取单号。
+- **提交结果不确定**：先到 XX平台核对审核状态，避免直接重复提交。
+- **微信控件找不到或无法确认状态**：检查客户端与可选依赖兼容性，并在微信中核对文章窗口。
 
-接口发现与只读调试见 [任务接口调试记录](docs/task-api-discovery.md)。
+现有测试主要通过模拟请求验证逻辑，真实材料提交链路尚未完成端到端验证。
 
-```powershell
-python main.py --prompt --inspect-task 407447791006
-```
-
-读取任务详情、要求及用户状态，并预览领取/上传/提交请求结构；不执行这些写入请求。
-
-- 请求：`GET https://saic-px.saicmotor.com/api/front/mobile-users/show`
-- 请求头：`authorize: Bearer <token>`（自定义头，不是 `Authorization`）
-- 成功条件：HTTP 200、`errcode` 为整数 0、`data` 包含非空 `id`。
-- 401/403、重定向、业务失败、非 JSON、超时均不判定为成功。
-- 成功退出码为 0，失败为 1；终端不打印 Token 或用户资料。
-
-2026-10-22 已在浏览器现有登录态验证：携带 Token 为 HTTP 200/errcode 0，
-不携带 Token 为 HTTP 401。未执行短信发送或账号密码登录。
-
-后续代码可使用 `SaicClient(token).validate_login()` 获取用户字典，
-并通过 `get_session()` 复用请求会话。建议用 `with SaicClient(token) as client` 释放连接。
-
-```powershell
-python -m unittest discover -s tests -v
-```

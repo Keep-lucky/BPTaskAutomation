@@ -28,6 +28,7 @@ class DesktopApp:
         self.events = queue.Queue()
         self.client = self.workflow = self.detail = None
         self.busy = False
+        self.pending_auto_submit = False
         self.auth = SmsAuth()
         self.resend_at = 0
         self.files = {}
@@ -116,7 +117,9 @@ class DesktopApp:
         target_actions = ttk.Frame(targetrow)
         target_actions.pack(fill="x", pady=(4, 0))
         self.button(target_actions, "复制目标链接", self.copy_target_url).pack(side="left")
-        self.button(target_actions, "微信打开文章（方案一）", self.open_target_article).pack(side="left", padx=6)
+        self.button(target_actions, "微信打开（方案一）", self.open_target_article).pack(side="left", padx=6)
+        self.button(target_actions, "自动打开并截图", self.interact_target_article).pack(side="left")
+        self.button(target_actions, "当前文章执行并截图", self.interact_current_article).pack(side="left", padx=6)
         interaction_options = ttk.Frame(targetrow)
         interaction_options.pack(fill="x", pady=4)
         self.article_like = tk.BooleanVar(value=True)
@@ -126,12 +129,19 @@ class DesktopApp:
             option = ttk.Checkbutton(interaction_options, text=label, variable=variable)
             option.pack(side="left")
             self.controls.append(option)
+        self.auto_submit = tk.BooleanVar(value=False)
+        auto_submit = ttk.Checkbutton(
+            targetrow,
+            text="截图完成后自动提交审核（跳过人工确认，仅当前任务）",
+            variable=self.auto_submit,
+        )
+        auto_submit.pack(anchor="w", pady=(0, 4))
+        self.controls.append(auto_submit)
         ttk.Label(targetrow, text="朋友圈配文（选填，最终在微信中确认发表）").pack(anchor="w")
         self.article_caption = tk.StringVar()
         caption_entry = ttk.Entry(targetrow, textvariable=self.article_caption)
         caption_entry.pack(fill="x")
         self.controls.append(caption_entry)
-        self.button(targetrow, "打开文章并执行所选操作", self.interact_target_article).pack(anchor="w", pady=4)
         self.requirements = tk.Text(left, wrap="word", width=50, height=9, state="disabled")
         self.requirements.pack(fill="both", expand=True)
         self.materials = ttk.Frame(right)
@@ -205,18 +215,60 @@ class DesktopApp:
         self.write("正在通过微信文件传输助手发送并打开当前任务文章。")
         self.start(lambda: open_article(url), self.write)
 
+    def article_options(self):
+        return dict(like=self.article_like.get(), watch=self.article_watch.get(),
+                    moments=self.article_moments.get(), caption=self.article_caption.get(),
+                    detail=dict(self.detail))
+
+    def article_emit(self, text):
+        self.events.put(("done", self.write, text))
+
     def interact_target_article(self):
         if self.busy:
             return
         if not self.detail or not self.target_url.get():
             return messagebox.showinfo("提示", "请先查看含目标文章链接的任务详情。")
+        if not any((self.article_like.get(), self.article_watch.get(), self.article_moments.get())):
+            return messagebox.showinfo("提示", "请至少勾选一项文章操作。")
         url = self.target_url.get()
-        title = self.detail.get("name") or self.detail.get("taskName") or ""
-        options = dict(like=self.article_like.get(), watch=self.article_watch.get(),
-                       moments=self.article_moments.get(), caption=self.article_caption.get(), detail=dict(self.detail))
-        self.write("开始文章操作，请保持微信窗口可用；遇到状态无法确认时会停止，请查看日志。")
-        self.start(lambda: interact_article(url, title, **options,
-                   emit=lambda text: self.events.put(("done", self.write, text))), self.write)
+        options = self.article_options()
+        self.write("开始文章操作，请保持微信窗口可用；截图会在各操作确认成功后自动保存并填入材料。")
+        self.start(lambda: interact_article(url, **options, emit=self.article_emit), self.article_done)
+
+    def interact_current_article(self):
+        if self.busy:
+            return
+        if not self.detail:
+            return messagebox.showinfo("提示", "请先查看任务详情，以确定要填入的材料。")
+        if not any((self.article_like.get(), self.article_watch.get(), self.article_moments.get())):
+            return messagebox.showinfo("提示", "请至少勾选一项文章操作。")
+        options = self.article_options()
+        self.write("将操作微信中当前已打开的文章。请确认只打开目标文章，且未打开其他公众号文章。")
+        self.start(lambda: interact_article("", **options, reuse_open_article=True, emit=self.article_emit),
+                   self.article_done)
+
+    def article_done(self, result):
+        self.write(result.get("message", "文章操作已结束。"))
+        for name, path in result.get("materials", {}).items():
+            if name in self.files:
+                self.files[name].set(path)
+                self.write(f"已自动填入材料：{name} ← {path}")
+            else:
+                self.write(f"截图已保存，但当前任务没有「{name}」材料字段：{path}")
+        for warning in result.get("warnings", []):
+            self.write("注意：" + warning)
+        if not self.auto_submit.get():
+            if result.get("materials"):
+                self.write("请核对材料截图与任务要求；确认无误后勾选真实完成，再执行提交。")
+            return
+        if not result.get("materials"):
+            self.write("自动提交已跳过：本次没有自动填入任何材料，请手动核对后提交。")
+            return
+        if not (self.client and self.workflow and self.detail):
+            self.write("自动提交已跳过：请先登录并查看任务详情。")
+            return
+        self.write("自动提交已开启：截图完成后直接提交当前任务，不再人工确认；必填材料缺失时会跳过自动提交。")
+        self.pending_auto_submit = True
 
     def write(self, text):
         self.log.configure(state="normal")
@@ -274,6 +326,9 @@ class DesktopApp:
                         control.configure(state="readonly" if control is self.filter else "normal")
         except queue.Empty:
             pass
+        if self.pending_auto_submit and not self.busy:
+            self.pending_auto_submit = False
+            self._auto_submit()
         remaining = max(0, int(self.resend_at - time.monotonic() + 0.999))
         self.sms_button.configure(text=f"{remaining}s 后重发" if remaining else "获取验证码",
                                   state="disabled" if self.busy or remaining else "normal")
@@ -313,6 +368,7 @@ class DesktopApp:
         self.workflow = Workflow(self.client)
         self.batch_runner = BatchRunner(self.client.clone, self.workflow.uncertain)
         self.detail = None
+        self.pending_auto_submit = False
         self.target_url.set("")
         self.article_caption.set("")
         self.real.set(False)
@@ -411,9 +467,12 @@ class DesktopApp:
 
     def show_detail(self, result):
         self.detail, self.task_status = result
+        self.pending_auto_submit = False
         self.article_caption.set("")
         target_url = (self.detail.get("taskDetailDTOS") or {}).get("taskLinkUrl")
         self.target_url.set(target_url.strip() if isinstance(target_url, str) else "")
+        if self.target_url.get().startswith("https://mp.weixin.qq.com/"):
+            self.write("若微信版本无法自动打开文章，请复制链接在微信中手动打开，再点“当前文章执行并截图”。")
         self.real.set(False)
         self.link.set("")
         self.files = {}
@@ -433,6 +492,11 @@ class DesktopApp:
             self.detail = None
             self.write(str(error))
             return
+        # 只预选任务实际需要的文章操作，避免自动截图时执行多余互动。
+        names = [name for name, _ in fields]
+        self.article_like.set(any("点赞" in name for name in names))
+        self.article_watch.set(any("在看" in name for name in names))
+        self.article_moments.set(any(keyword in name for name in names for keyword in ("转发", "朋友圈")))
         for name, required in fields:
             row = ttk.Frame(self.materials)
             row.pack(fill="x", pady=2)
@@ -495,12 +559,38 @@ class DesktopApp:
     def execute(self):
         if self.busy:
             return
+        # 手动提交优先，丢弃尚未触发的自动提交，避免同一任务被提交两次。
+        self.pending_auto_submit = False
         if self.checked:
             return self.execute_batch()
+        self.submit_current()
+
+    def submit_current(self):
         if not self.detail or not self.workflow:
             return messagebox.showinfo("提示", "请先查看任务详情并选择材料。")
         if not self.real.get():
             return messagebox.showinfo("提示", "请确认已真实完成任务，并选择对应截图。")
+        self._start_submit()
+
+    def _auto_submit(self):
+        if not (self.workflow and self.detail):
+            self.write("自动提交已跳过：任务详情或登录状态已失效，请手动处理。")
+            return
+        try:
+            fields = material_fields(self.detail)
+        except ValueError:
+            fields = []
+        missing = [name for name, required in fields
+                   if required and not (self.files.get(name) and self.files[name].get().strip())]
+        if missing:
+            self.write("自动提交已跳过：必填材料仍为空（" + "、".join(missing) + "），请手动补充后提交。")
+            return
+        if self.checked:
+            self.write("自动提交只处理当前详情任务；已勾选的批量任务保持原状。")
+        self.write("自动提交：开始领取、上传并提交当前任务（跳过人工确认）。")
+        self._start_submit()
+
+    def _start_submit(self):
         self.reset_steps()
         self.progress.configure(maximum=len(STEPS))
         self.progress["value"] = 0

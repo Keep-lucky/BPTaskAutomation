@@ -210,3 +210,16 @@ class DesktopTests(unittest.TestCase):
         app.poll()
         app.workflow.run.assert_not_called()
         self.assertIn("必填材料仍为空（转发）", app.log.get("1.0", "end"))
+
+    def test_tall_content_can_scroll_vertically(self):
+        root = tk.Tk()
+        self.addCleanup(root.destroy)
+        app = DesktopApp(root)
+        self.addCleanup(app.auth.close)
+        root.geometry("1000x480")
+        root.update()
+        _, _, _, content_height = (int(value) for value in str(app.canvas.cget("scrollregion")).split())
+        self.assertGreater(content_height, app.canvas.winfo_height())
+        app.canvas.yview_moveto(1.0)
+        root.update()
+        self.assertGreater(app.canvas.yview()[1], 0.99)

@@ -23,8 +23,11 @@ class DesktopApp:
     def __init__(self, root):
         self.root = root
         self.root.title("上汽任务工作台")
-        self.root.geometry("1180x880")
-        self.root.minsize(980, 720)
+        # 高 DPI 缩放下屏幕逻辑尺寸可能较小，窗口按可用屏幕收缩，其余内容用滚动条查看。
+        width = min(1180, self.root.winfo_screenwidth() - 60)
+        height = min(880, self.root.winfo_screenheight() - 100)
+        self.root.geometry(f"{width}x{height}")
+        self.root.minsize(min(940, width), 480)
         self.events = queue.Queue()
         self.client = self.workflow = self.detail = None
         self.busy = False
@@ -48,8 +51,18 @@ class DesktopApp:
         return widget
 
     def build(self):
-        base = ttk.Frame(self.root, padding=14)
-        base.pack(fill="both", expand=True)
+        shell = ttk.Frame(self.root)
+        shell.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(shell, highlightthickness=0, borderwidth=0)
+        scrollbar = ttk.Scrollbar(shell, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        base = ttk.Frame(self.canvas, padding=14)
+        window = self.canvas.create_window((0, 0), window=base, anchor="nw")
+        base.bind("<Configure>", lambda _: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda event: self.canvas.itemconfigure(window, width=event.width))
+        self.root.bind_all("<MouseWheel>", self.scroll_wheel)
         login = ttk.LabelFrame(base, text="1. 手机号验证码登录", padding=8)
         login.pack(fill="x")
         sms = ttk.Frame(login)
@@ -189,6 +202,12 @@ class DesktopApp:
         self.log.configure(yscrollcommand=scroll.set)
         self.log.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+
+    def scroll_wheel(self, event):
+        # 文本、表格和下拉框保留自己的滚轮行为，其余区域滚动整个页面。
+        if isinstance(event.widget, (tk.Text, ttk.Treeview, ttk.Combobox)):
+            return
+        self.canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
 
     def paste(self):
         try:
